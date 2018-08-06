@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <title>状态管理实战</title>
+  <style>
+    .btn {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="#root"></div>
+</body>
+<script>
+class PubSub {
+
+  constructor() {
+    this.events = {};
+  }
+
+  subscribe(event, callback) {
+    let self = this;
+
+    if (!self.events.hasOwnProperty(event)) {
+      self.events[event] = [];
+    }
+
+    return self.events[event].push(callback);
+  }
+
+  publish(event, data = {}) {
+    let self = this;
+
+    if (!self.events.hasOwnProperty(event)) {
+      return [];
+    }
+
+    return self.events[event].map(callback => callback(data));
+  }
+
+}
+
+class Store {
+
+  constructor(params = {}) {
+    let self = this;
+
+    self.actions = {};
+    self.mutations = {};
+    self.state = {};
+    self.status = 'resting';
+    self.events = new PubSub();
+
+    if (params.hasOwnProperty('actions')) {
+      self.actions = params.actions;
+    }
+
+    if (params.hasOwnProperty('mutations')) {
+      self.mutations = params.mutations;
+    }
+
+    self.state = new Proxy((params.state || {}), {
+      set: function (state, key, value) {
+        state[key] = value;
+        console.log(`stateChange: ${key}: ${value}`);
+
+        self.events.publish('stateChange', self.state);
+
+        if (self.status !== 'mutation') {
+          console.warn(`You should use a mutation to set ${key}`);
+        }
+
+        self.status = 'resting';
+
+        return true;
+      }
+    });
+  }
+
+  dispatch(actionKey, payload) {
+    let self = this;
+
+    if (typeof self.actions[actionKey] !== 'function') {
+      console.error(`Action: "${actionKey}" doesn't exist.`);
+
+      return false;
+    }
+
+    console.groupCollapsed(`ACTION: ${actionKey}`);
+
+    self.status = 'action';
+
+    self.actions[actionKey](self, payload);
+
+    console.groupEnd();
+
+    return true;
+  }
+
+  commit(mutationKey, payload) {
+    let self = this;
+
+    if (typeof self.mutations[mutationKey] !== 'function') {
+      console.log(`Mutation "${mutationKey}" doesn't exist`);
+      return false;
+    }
+
+    self.status = 'mutation';
+
+    let newState = self.mutations[mutationKey](self.state, payload);
+
+    self.state = Object.assign(self.state, newState);
+
+    return true;
+  }
+}
+
+const store = new Store({
+  state: {
+    count: 0,
+  },
+  actions: {
+    inc(context, payload) {
+      context.commit('add', payload);
+    },
+  },
+  mutations: {
+    add(state, payload = 1) {
+      state.count = state.count + payload;
+      return state;
+    }
+  }
+});
+
+class Component {
+  constructor(props = {}) {
+    let self = this;
+
+    this.render = this.render || function () {};
+
+    if (props.store instanceof Store) {
+      props.store.events.subscribe('stateChange', () => self.render());
+    }
+
+    if (props.hasOwnProperty('element')) {
+      this.element = props.element;
+    }
+  }
+}
+
+class Count extends Component {
+  constructor(props = {}) {
+    super({
+      store,
+      element: document.getElementById('#root')
+    });
+  }
+  
+  render() {
+    const self = this;
+
+    self.element.innerHTML = `
+      <div>
+        <div>count: ${store.state.count}</div>
+        <input type="button" value="增加" class="btn" />
+      </div>
+    `
+
+    document.querySelector('.btn').addEventListener('click', function (e){
+      store.dispatch('inc', 2);
+    });
+  }
+}
+
+const count = new Count();
+
+count.render();
+
+</script>
+</html>
