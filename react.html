@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>react-with-mutation</title>
+    <script src="https://unpkg.com/react@16/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@16/umd/react-dom.development.js"></script>
+  </head>
+  <body>
+    <div id="#root"></div>
+    <script>
+    class Event {
+      constructor() {
+        this.events = {};
+      }
+
+      on(event, callback) {
+        this.events[event] = callback;
+      }
+
+      emit(event, payload) {
+        this.events[event](payload);
+      }
+    }
+
+    class Store {
+      constructor(params = {}) {
+        this.actions = params.actions || {};
+        this.mutations = params.mutations || {};
+        this.events = new Event();
+        this.state = new Proxy(params.state || {}, {
+          set: (state, key, value) => {
+            state[key] = value;
+            // 自动发布
+            this.events.emit('stateChange', this.state);
+            return true;
+          }
+        })
+      }
+
+      dispatch(actionKey, payload) {
+        let self = this;
+        self.actions[actionKey](self, payload);
+      }
+
+      commit(mutationKey, payload) {
+        let self = this;
+        const newState = this.mutations[mutationKey](self.state, payload);
+        self.state = Object.assign(self.state, newState);
+      }
+    }
+
+    const store = new Store({
+      state: {
+        count: 0,
+      },
+      actions: {
+        inc(context, payload) {
+          context.commit('add', payload);
+        },
+      },
+      mutations: {
+        add(state, payload = 1) {
+          state.count = state.count + payload;
+          return state;
+        }
+      },
+    });
+
+    class Count extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = {};
+      }
+
+      componentDidMount() {
+        store.events.on('stateChange', () => this.setState({}));
+      }
+
+      render() {
+        return (
+          React.createElement('div', null,
+            React.createElement('div', null,
+              store.state.count
+            ),
+            React.createElement('button', {
+              onClick: () => store.dispatch('inc', 2)
+            }, '增加')
+          )
+        )
+      }
+    }
+
+    ReactDOM.render(
+      React.createElement(Count),
+      document.getElementById('#root')
+    );
+    </script>
+  </body>
+</html>
